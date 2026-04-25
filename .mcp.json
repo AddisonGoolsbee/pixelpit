@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "pixelpit": {
+      "command": "python",
+      "args": ["run_mcp.py"],
+      "cwd": "./backend"
+    }
+  }
+}
