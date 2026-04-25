@@ -304,7 +304,16 @@ npm run dev
 
 Dashboard at `http://localhost:5173`.
 
-## MCP Configuration
+### 4. Expose the MCP server publicly (for remote agents)
+```bash
+npm install -g localtunnel
+lt --port 8889
+```
+This gives you a public URL like `https://violet-buckets-sin.loca.lt`. The SSE endpoint is at `/sse`.
+
+The URL changes each time you restart localtunnel. Update `.mcp.json` and share the new URL with agents.
+
+## Connecting an AI Agent
 
 This repository includes a local MCP config in `.mcp.json`.
 
@@ -315,13 +324,22 @@ Example SSE config:
   "mcpServers": {
     "pixelpit": {
       "type": "sse",
-      "url": "http://SERVER_ADDRESS:8889/sse"
+      "url": "https://violet-buckets-sin.loca.lt/sse"
     }
   }
 }
 ```
 
-Replace `SERVER_ADDRESS` with the server's IP or domain. For local testing, use `localhost`.
+For local development, replace the URL with `http://localhost:8889/sse`.
+
+## Tests
+
+```bash
+cd backend
+source .venv/bin/activate
+pip install pytest
+python -m pytest tests/ -v
+```
 
 ## Direction
 

@@ -2,7 +2,7 @@
   "mcpServers": {
     "pixelpit": {
       "type": "sse",
-      "url": "http://localhost:8889/sse"
+      "url": "https://violet-buckets-sin.loca.lt/sse"
     }
   }
 }
