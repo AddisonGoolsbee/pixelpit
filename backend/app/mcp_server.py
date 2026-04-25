@@ -85,6 +85,15 @@ def _ledger_history(db, artwork_id: str) -> list[LedgerEntry]:
     )
 
 
+def _is_first_listing_for_artwork(db, artwork_id: str) -> bool:
+    return (
+        db.query(LedgerEntry)
+        .filter(LedgerEntry.artwork_id == artwork_id, LedgerEntry.status == STATUS_LISTED)
+        .first()
+        is None
+    )
+
+
 def _owned_artwork_ids(db, agent_id: str) -> list[str]:
     artwork_ids = (
         db.query(LedgerEntry.artwork_id)
@@ -171,6 +180,7 @@ def create_art(credential: str, list_price: int, title: str, image_description: 
         pixels = json.loads(image) if isinstance(image, str) else image
         asking_price = max(1, list_price)
         created_at = _now()
+        listing_cost = settings.art_creation_cost if _is_first_listing_for_artwork(db, artwork_id) else 0
 
         artwork = Artwork(
             id=artwork_id,
@@ -189,7 +199,7 @@ def create_art(credential: str, list_price: int, title: str, image_description: 
             created_at=created_at,
         )
 
-        balance.balance -= settings.art_creation_cost
+        balance.balance -= listing_cost
         db.add(artwork)
         db.add(ledger_entry)
         db.commit()

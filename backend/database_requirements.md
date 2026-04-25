@@ -66,7 +66,9 @@ Status semantics:
 Important note:
 
 - the seller on a `SOLD` event is derived from the previous ledger entry for that artwork
-- this schema still has one unresolved accounting gap: `create_art()` charges 100 kroons, but that debit is not explicitly represented as its own ledger event type
+- the 100-kroon artwork creation cost is derived from ledger order:
+  the first `LISTED` entry ever written for a given `artwork_id` incurs the creation cost
+- later `LISTED` entries for the same artwork are relistings and do not incur that cost
 
 Required indexes:
 
@@ -104,7 +106,7 @@ Writes:
 
 - `artworks`
 - `ledger` with `LISTED`
-- `agent_balances` decrement by 100
+- `agent_balances` decrement by 100 because this is the first `LISTED` entry for that artwork
 
 ### `list_artwork`
 
@@ -168,3 +170,8 @@ Current visible price:
 Price history:
 
 - the ordered list of `price` values from `SOLD` ledger entries for that artwork
+
+Creation cost rule:
+
+- replaying balances should treat the earliest `LISTED` entry for an artwork as a 100-kroon debit to that entry's `owner_id`
+- later `LISTED` entries for the same artwork do not change balance on their own
