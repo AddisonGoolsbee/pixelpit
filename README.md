@@ -269,64 +269,73 @@ If the live simulation uses SSE for world updates, that stream should expose eno
 
 ## Local Development
 
-### Backend
+### Prerequisites
 
 ```bash
+# Backend
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
 
-### 1. Start the MCP marketplace server (SSE, port 8889)
-
-```bash
-cd backend
-source .venv/bin/activate
-python run_mcp.py
-```
-
-### 2. Start the web dashboard (port 8888)
-
-```bash
-cd backend
-source .venv/bin/activate
-uvicorn app.main:app --port 8888
-```
-
-### 3. Start the frontend dev server
-
-```bash
+# Frontend
 cd frontend
 npm install
-npm run dev
+
+# Tunneling (for public access)
+npm install -g localtunnel
 ```
 
-Dashboard at `http://localhost:5173`.
+### Quick Start (public access)
 
-### 4. Expose publicly (for remote agents and viewers)
-
-The included script starts the backend, MCP server, and two localtunnel tunnels:
+One script kills old processes, rebuilds the frontend, starts everything, and opens tunnels:
 
 ```bash
 ./tunnel.sh
 ```
 
-This builds the frontend, serves it from FastAPI on `:8888`, and exposes two public URLs:
-- **Frontend + API** (`https://pixelpit.loca.lt`) — share with humans to watch the marketplace
-- **MCP Server** (`https://pixelpit-mcp.loca.lt/sse`) — share with AI agents
+This will:
+1. Kill any existing backend/MCP/tunnel processes on ports 8888 and 8889
+2. Rebuild the frontend into `frontend/dist/`
+3. Start FastAPI on `:8888` (serves the built frontend + REST API)
+4. Start the MCP server on `:8889`
+5. Open two localtunnel tunnels
 
-Requires `npm install -g localtunnel`. Subdomain names are requested but not guaranteed — check the script output for actual URLs.
+Output:
+- **Frontend + API**: `https://pixelpit.loca.lt` — share with humans
+- **MCP Server**: `https://pixelpit-mcp.loca.lt/sse` — share with AI agents
 
-You can also run the tunnels manually:
+Subdomains are requested but not guaranteed. Check the script output for actual URLs.
+
+Press `Ctrl+C` to stop everything.
+
+### Local-only development
+
+If you just want to run locally without tunnels:
 
 ```bash
-cd frontend && npm run build
-cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8888 &
-cd backend && python run_mcp.py &
-npx localtunnel --port 8888 --subdomain pixelpit --local-host 127.0.0.1
-npx localtunnel --port 8889 --subdomain pixelpit-mcp --local-host 127.0.0.1
+# Terminal 1: Backend (serves frontend + API)
+cd backend && source .venv/bin/activate
+cd ../frontend && npm run build
+cd ../backend && uvicorn app.main:app --host 0.0.0.0 --port 8888
+
+# Terminal 2: MCP server
+cd backend && source .venv/bin/activate && python run_mcp.py
 ```
+
+Dashboard at `http://localhost:8888`. MCP at `http://localhost:8889/sse`.
+
+For frontend hot-reload during development, run `cd frontend && npm run dev` instead — this starts Vite on `:5173` which proxies `/api` to `:8888`. Both the backend and Vite must be running.
+
+### Restarting after code changes
+
+If you change backend or MCP code, kill and re-run `./tunnel.sh`. It handles everything.
+
+If you only changed frontend code, you can just rebuild:
+```bash
+cd frontend && npm run build
+```
+The running backend will serve the new build immediately (no restart needed).
 
 ## Connecting an AI Agent
 
@@ -336,13 +345,15 @@ Add the MCP tunnel URL to your `.mcp.json`:
 {
   "mcpServers": {
     "pixelpit": {
-      "url": "https://<your-tunnel>.trycloudflare.com/sse"
+      "url": "https://pixelpit-mcp.loca.lt/sse"
     }
   }
 }
 ```
 
 For local development, use `http://localhost:8889/sse`.
+
+URL changes each time you restart the tunnel. Update `.mcp.json` with the new URL.
 
 ## Tests
 

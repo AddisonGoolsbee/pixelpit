@@ -1,23 +1,50 @@
 #!/bin/bash
-# Starts PixelPit backend + MCP server and exposes them via localtunnel.
-# Frontend is served from the built dist/ folder by FastAPI on port 8888.
+# PixelPit launcher — kills old processes, rebuilds frontend, starts everything, opens tunnels.
+#
+# Usage: ./tunnel.sh
+#
+# What it does:
+#   1. Kills any existing backend/MCP/tunnel processes
+#   2. Rebuilds the frontend into dist/
+#   3. Starts FastAPI backend on :8888 (serves frontend + API)
+#   4. Starts MCP server on :8889
+#   5. Opens two localtunnel tunnels
 #
 # Prerequisites:
 #   npm install -g localtunnel
-#   cd frontend && npm run build
+#   cd backend && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+#   cd frontend && npm install
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_DIR="$SCRIPT_DIR/backend"
-FRONTEND_DIST="$SCRIPT_DIR/frontend/dist"
+FRONTEND_DIR="$SCRIPT_DIR/frontend"
+FRONTEND_DIST="$FRONTEND_DIR/dist"
+VENV="$BACKEND_DIR/.venv/bin/activate"
 
-# Check frontend build exists
-if [ ! -d "$FRONTEND_DIST" ]; then
-  echo "Frontend not built. Building now..."
-  (cd "$SCRIPT_DIR/frontend" && npm run build)
+# --- Kill old processes ---
+echo "Cleaning up old processes..."
+lsof -ti :8888 | xargs kill 2>/dev/null || true
+lsof -ti :8889 | xargs kill 2>/dev/null || true
+pkill -f "lt --port 8888" 2>/dev/null || true
+pkill -f "lt --port 8889" 2>/dev/null || true
+sleep 1
+
+# --- Check venv ---
+if [ ! -f "$VENV" ]; then
+  echo "Python venv not found. Creating..."
+  (cd "$BACKEND_DIR" && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt)
 fi
 
+# --- Rebuild frontend ---
+echo "Building frontend..."
+if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
+  (cd "$FRONTEND_DIR" && npm install)
+fi
+(cd "$FRONTEND_DIR" && npm run build)
+
+# --- Cleanup on exit ---
 cleanup() {
   echo ""
   echo "Shutting down..."
@@ -27,19 +54,19 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# Start backend (serves frontend + API on 8888)
+# --- Start backend (serves frontend + API on 8888) ---
 echo "Starting backend on :8888..."
-(cd "$BACKEND_DIR" && uvicorn app.main:app --host 0.0.0.0 --port 8888) &
+(cd "$BACKEND_DIR" && source .venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8888) &
 PID_BACKEND=$!
 
-# Start MCP server on 8889
+# --- Start MCP server on 8889 ---
 echo "Starting MCP server on :8889..."
-(cd "$BACKEND_DIR" && python run_mcp.py) &
+(cd "$BACKEND_DIR" && source .venv/bin/activate && python run_mcp.py) &
 PID_MCP=$!
 
 sleep 2
 
-# Start localtunnel for frontend + API
+# --- Start localtunnel ---
 echo ""
 echo "Starting tunnels..."
 npx localtunnel --port 8888 --subdomain pixelpit --local-host 127.0.0.1 &
@@ -50,10 +77,14 @@ PID_TUNNEL_MCP=$!
 
 sleep 3
 echo ""
-echo "PixelPit is running. Press Ctrl+C to stop."
+echo "==========================================="
+echo "  PixelPit is running!"
 echo ""
 echo "  Frontend + API:  https://pixelpit.loca.lt"
 echo "  MCP Server:      https://pixelpit-mcp.loca.lt/sse"
 echo ""
-echo "  (If subdomains were taken, check the output above for actual URLs)"
+echo "  (If subdomains were taken, check output above for actual URLs)"
+echo "==========================================="
+echo ""
+echo "Press Ctrl+C to stop everything."
 wait
