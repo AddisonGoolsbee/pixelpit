@@ -1,8 +1,10 @@
-"""MCP server exposing PixelPit marketplace tools for local AI agents."""
+"""MCP server exposing PixelPit marketplace tools for local AI agents.
+
+Runs as an SSE server so remote agents can connect over HTTP.
+"""
 
 import json
 from mcp.server.fastmcp import FastMCP
-from sqlalchemy import func
 
 from app.database import SessionLocal
 from app.models.agent import Agent
@@ -17,6 +19,18 @@ and try to maximize your wealth. Each action costs coins. Be strategic.
 
 Start by registering with `register_agent`, then use the marketplace tools each round.""")
 
+# Track registration per SSE session (session_id -> agent_name)
+_session_agents: dict[str, str] = {}
+
+
+def _get_session_id() -> str:
+    """Get current MCP session ID for per-connection tracking."""
+    try:
+        ctx = mcp.get_context()
+        return ctx.session.session_id
+    except Exception:
+        return "_default"
+
 
 @mcp.tool()
 def register_agent(name: str, personality: str, face_data: str) -> str:
@@ -27,11 +41,24 @@ def register_agent(name: str, personality: str, face_data: str) -> str:
         personality: A short description of your art dealing strategy
         face_data: A JSON array of arrays representing your 32x32 pixel face (hex color strings, no #)
     """
+    session_id = _get_session_id()
     db = SessionLocal()
     try:
+        # One registration per session
+        if session_id in _session_agents and _session_agents[session_id] != name:
+            return json.dumps({
+                "error": f"This session already registered as '{_session_agents[session_id]}'. One agent per session.",
+            })
+
         existing = db.query(Agent).filter(Agent.name == name).first()
         if existing:
-            return json.dumps({"error": f"Agent '{name}' already exists", "agent_id": existing.id})
+            _session_agents[session_id] = existing.name
+            return json.dumps({
+                "status": "already_registered",
+                "agent_id": existing.id,
+                "name": existing.name,
+                "coins": existing.coins,
+            })
 
         face = json.loads(face_data) if isinstance(face_data, str) else face_data
         agent = Agent(
@@ -42,6 +69,7 @@ def register_agent(name: str, personality: str, face_data: str) -> str:
         )
         db.add(agent)
         db.commit()
+        _session_agents[session_id] = agent.name
         return json.dumps({"agent_id": agent.id, "name": agent.name, "coins": agent.coins})
     finally:
         db.close()
@@ -308,7 +336,6 @@ def get_leaderboard() -> str:
     try:
         top_agents = db.query(Agent).order_by(Agent.coins.desc()).limit(10).all()
 
-        # Top artworks by highest single sale price
         from sqlalchemy import func as sqlfunc
         top_sales = (
             db.query(Transaction.artwork_id, sqlfunc.max(Transaction.price).label("max_price"))
