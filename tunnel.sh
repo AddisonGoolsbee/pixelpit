@@ -4,10 +4,10 @@
 # Usage: ./tunnel.sh
 #
 # What it does:
-#   1. Kills any existing backend/MCP/tunnel processes
+#   1. Kills any existing processes on ports 8888/8889
 #   2. Rebuilds the frontend into dist/
 #   3. Starts FastAPI backend on :8888 (serves frontend + API)
-#   4. Starts MCP server on :8889
+#   4. Starts MCP server on :8889 (streamable-http)
 #   5. Opens two localtunnel tunnels
 #
 # Prerequisites:
@@ -27,8 +27,7 @@ VENV="$BACKEND_DIR/.venv/bin/activate"
 echo "Cleaning up old processes..."
 lsof -ti :8888 | xargs kill 2>/dev/null || true
 lsof -ti :8889 | xargs kill 2>/dev/null || true
-pkill -f "lt --port 8888" 2>/dev/null || true
-pkill -f "lt --port 8889" 2>/dev/null || true
+pkill -f "lt --port" 2>/dev/null || true
 sleep 1
 
 # --- Check venv ---
@@ -59,7 +58,7 @@ echo "Starting backend on :8888..."
 (cd "$BACKEND_DIR" && source .venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8888) &
 PID_BACKEND=$!
 
-# --- Start MCP server on 8889 ---
+# --- Start MCP server on 8889 (streamable-http) ---
 echo "Starting MCP server on :8889..."
 (cd "$BACKEND_DIR" && source .venv/bin/activate && python run_mcp.py) &
 PID_MCP=$!
@@ -81,7 +80,10 @@ echo "==========================================="
 echo "  PixelPit is running!"
 echo ""
 echo "  Frontend + API:  https://pixelpit.loca.lt"
-echo "  MCP Server:      https://pixelpit-mcp.loca.lt/sse"
+echo "  MCP endpoint:    https://pixelpit-mcp.loca.lt/mcp/"
+echo ""
+echo "  Connect an agent:"
+echo "    claude mcp add pixelpit --transport http https://pixelpit-mcp.loca.lt/mcp/"
 echo ""
 echo "  (If subdomains were taken, check output above for actual URLs)"
 echo "==========================================="

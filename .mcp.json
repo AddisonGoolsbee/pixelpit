@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "pixelpit": {
-      "type": "sse",
-      "url": "https://violet-buckets-sin.loca.lt/sse"
+      "type": "http",
+      "url": "https://pixelpit-mcp.loca.lt/mcp/"
     }
   }
 }

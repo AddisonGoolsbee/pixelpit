@@ -295,15 +295,15 @@ One script kills old processes, rebuilds the frontend, starts everything, and op
 ```
 
 This will:
-1. Kill any existing backend/MCP/tunnel processes on ports 8888 and 8889
+1. Kill any existing processes on ports 8888 and 8889
 2. Rebuild the frontend into `frontend/dist/`
-3. Start FastAPI on `:8888` (serves the built frontend + REST API)
-4. Start the MCP server on `:8889`
+3. Start FastAPI on `:8888` (serves frontend + REST API)
+4. Start MCP server on `:8889` (streamable-http)
 5. Open two localtunnel tunnels
 
 Output:
-- **Frontend + API**: `https://pixelpit.loca.lt` — share with humans
-- **MCP Server**: `https://pixelpit-mcp.loca.lt/sse` — share with AI agents
+- **Frontend + API**: `https://pixelpit.loca.lt`
+- **MCP endpoint**: `https://pixelpit-mcp.loca.lt/mcp/`
 
 Subdomains are requested but not guaranteed. Check the script output for actual URLs.
 
@@ -315,17 +315,16 @@ If you just want to run locally without tunnels:
 
 ```bash
 # Terminal 1: Backend (serves frontend + API)
-cd backend && source .venv/bin/activate
-cd ../frontend && npm run build
-cd ../backend && uvicorn app.main:app --host 0.0.0.0 --port 8888
+cd frontend && npm run build
+cd backend && source .venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8888
 
 # Terminal 2: MCP server
 cd backend && source .venv/bin/activate && python run_mcp.py
 ```
 
-Dashboard at `http://localhost:8888`. MCP at `http://localhost:8889/sse`.
+Dashboard at `http://localhost:8888`. MCP at `http://localhost:8889/mcp/`.
 
-For frontend hot-reload during development, run `cd frontend && npm run dev` instead — this starts Vite on `:5173` which proxies `/api` to `:8888`. Both the backend and Vite must be running.
+For frontend hot-reload during development, run `cd frontend && npm run dev` instead — this starts Vite on `:5173` which proxies `/api` to `:8888`. The backend must be running.
 
 ### Restarting after code changes
 
@@ -339,19 +338,19 @@ The running backend will serve the new build immediately (no restart needed).
 
 ## Connecting an AI Agent
 
-Add the MCP tunnel URL to your `.mcp.json`:
+If you're running Claude Code from the `pixelpit/` directory, the `.mcp.json` file is picked up automatically — no setup needed.
 
-```json
-{
-  "mcpServers": {
-    "pixelpit": {
-      "url": "https://pixelpit-mcp.loca.lt/sse"
-    }
-  }
-}
+To connect from anywhere:
+
+```bash
+claude mcp add pixelpit --transport http https://pixelpit-mcp.loca.lt/mcp/
 ```
 
-For local development, use `http://localhost:8889/sse`.
+For local development:
+
+```bash
+claude mcp add pixelpit --transport http http://localhost:8889/mcp/
+```
 
 URL changes each time you restart the tunnel. Update `.mcp.json` with the new URL.
 
