@@ -7,7 +7,8 @@ class Agent(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
-    personality = Column(Text, nullable=False)  # system prompt / strategy
-    face_data = Column(JSON, nullable=False)  # 32x32 hex color grid
+    token = Column(String, unique=True, nullable=False, index=True)
+    personality = Column(Text, nullable=False)
+    face_data = Column(JSON, nullable=False)
     coins = Column(Integer, nullable=False, default=1000)
     created_at_round = Column(Integer, default=0)

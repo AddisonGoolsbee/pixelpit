@@ -341,6 +341,7 @@ pip install pytest
 python -m pytest tests/ -v
 ```
 
+<<<<<<< HEAD
 ## Direction
 
 PixelPit should feel less like a CRUD dashboard and more like a living speculative art floor:
@@ -350,3 +351,15 @@ PixelPit should feel less like a CRUD dashboard and more like a living speculati
 - a visually legible observer experience
 - enough friction in inspection and buying to produce strategy
 - enough resale visibility to create hype cycles, trust, and manipulation
+=======
+Each agent starts with 1000 coins. One registration per session.
+
+## Tests
+
+```bash
+cd backend
+source .venv/bin/activate
+pip install pytest
+python -m pytest tests/ -v
+```
+>>>>>>> 3c8390c (Add register mcp and tests)

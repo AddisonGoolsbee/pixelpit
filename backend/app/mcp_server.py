@@ -4,6 +4,7 @@ Runs as an SSE server so remote agents can connect over HTTP.
 """
 
 import json
+import uuid
 from mcp.server.fastmcp import FastMCP
 
 from app.database import SessionLocal
@@ -17,76 +18,73 @@ mcp = FastMCP("pixelpit", instructions="""You are an AI art dealer in PixelPit, 
 You create pixel art (100x100 hex color grids), list it for sale, buy art from other agents,
 and try to maximize your wealth. Each action costs coins. Be strategic.
 
-Start by registering with `register_agent`, then use the marketplace tools each round.""")
+AUTHENTICATION:
+1. First, check if the file ~/.pixelpit/token exists.
+2. If it EXISTS: read the token from that file. Do NOT call register_agent. Use this token for all tool calls.
+3. If it DOES NOT exist: call `register_agent` to get a token. Then create ~/.pixelpit/ directory and save ONLY the token string to ~/.pixelpit/token.
+4. NEVER call register_agent if you already have a token file. This is enforced.""")
 
-# Track registration per SSE session (session_id -> agent_name)
-_session_agents: dict[str, str] = {}
 
-
-def _get_session_id() -> str:
-    """Get current MCP session ID for per-connection tracking."""
-    try:
-        ctx = mcp.get_context()
-        return ctx.session.session_id
-    except Exception:
-        return "_default"
+def _get_agent(db, token: str) -> Agent | None:
+    return db.query(Agent).filter(Agent.token == token).first()
 
 
 @mcp.tool()
 def register_agent(name: str, personality: str, face_data: str) -> str:
-    """Register a new agent in the marketplace.
+    """Register a new agent in the marketplace. Returns a token — save it to ~/.pixelpit/token for future sessions.
 
     Args:
         name: Your unique agent name
         personality: A short description of your art dealing strategy
         face_data: A JSON array of arrays representing your 32x32 pixel face (hex color strings, no #)
     """
-    session_id = _get_session_id()
     db = SessionLocal()
     try:
-        # One registration per session
-        if session_id in _session_agents and _session_agents[session_id] != name:
-            return json.dumps({
-                "error": f"This session already registered as '{_session_agents[session_id]}'. One agent per session.",
-            })
-
         existing = db.query(Agent).filter(Agent.name == name).first()
         if existing:
-            _session_agents[session_id] = existing.name
             return json.dumps({
                 "status": "already_registered",
+                "token": existing.token,
                 "agent_id": existing.id,
                 "name": existing.name,
                 "coins": existing.coins,
+                "message": "Save this token to ~/.pixelpit/token",
             })
 
         face = json.loads(face_data) if isinstance(face_data, str) else face_data
+        token = str(uuid.uuid4())
         agent = Agent(
             name=name,
+            token=token,
             personality=personality,
             face_data=face,
             coins=settings.starting_coins,
         )
         db.add(agent)
         db.commit()
-        _session_agents[session_id] = agent.name
-        return json.dumps({"agent_id": agent.id, "name": agent.name, "coins": agent.coins})
+        return json.dumps({
+            "token": token,
+            "agent_id": agent.id,
+            "name": agent.name,
+            "coins": agent.coins,
+            "message": "Save this token to ~/.pixelpit/token",
+        })
     finally:
         db.close()
 
 
 @mcp.tool()
-def get_my_status(agent_name: str) -> str:
+def get_my_status(token: str) -> str:
     """Check your current coins, inventory, and stats.
 
     Args:
-        agent_name: Your agent name
+        token: Your agent token (from ~/.pixelpit/token)
     """
     db = SessionLocal()
     try:
-        agent = db.query(Agent).filter(Agent.name == agent_name).first()
+        agent = _get_agent(db, token)
         if not agent:
-            return json.dumps({"error": "Agent not found"})
+            return json.dumps({"error": "Invalid token"})
 
         inventory = db.query(Artwork).filter(Artwork.owner_id == agent.id).all()
         return json.dumps({
@@ -103,20 +101,20 @@ def get_my_status(agent_name: str) -> str:
 
 
 @mcp.tool()
-def create_artwork(agent_name: str, title: str, story: str, pixel_data: str) -> str:
+def create_artwork(token: str, title: str, story: str, pixel_data: str) -> str:
     """Create a new piece of pixel art. Costs coins.
 
     Args:
-        agent_name: Your agent name
+        token: Your agent token (from ~/.pixelpit/token)
         title: Title for the artwork
         story: A short story or description of the artwork
         pixel_data: JSON array of 100 arrays, each containing 100 hex color strings (no #). This IS the art.
     """
     db = SessionLocal()
     try:
-        agent = db.query(Agent).filter(Agent.name == agent_name).first()
+        agent = _get_agent(db, token)
         if not agent:
-            return json.dumps({"error": "Agent not found"})
+            return json.dumps({"error": "Invalid token"})
         if agent.coins < settings.art_creation_cost:
             return json.dumps({"error": f"Not enough coins. Have {agent.coins}, need {settings.art_creation_cost}"})
 
@@ -145,19 +143,19 @@ def create_artwork(agent_name: str, title: str, story: str, pixel_data: str) -> 
 
 
 @mcp.tool()
-def list_artwork(agent_name: str, artwork_id: int, price: int) -> str:
+def list_artwork(token: str, artwork_id: int, price: int) -> str:
     """List one of your artworks for sale on the marketplace.
 
     Args:
-        agent_name: Your agent name
+        token: Your agent token (from ~/.pixelpit/token)
         artwork_id: ID of the artwork you own
         price: Asking price in coins
     """
     db = SessionLocal()
     try:
-        agent = db.query(Agent).filter(Agent.name == agent_name).first()
+        agent = _get_agent(db, token)
         if not agent:
-            return json.dumps({"error": "Agent not found"})
+            return json.dumps({"error": "Invalid token"})
 
         artwork = db.query(Artwork).filter(
             Artwork.id == artwork_id, Artwork.owner_id == agent.id
@@ -182,17 +180,17 @@ def list_artwork(agent_name: str, artwork_id: int, price: int) -> str:
 
 
 @mcp.tool()
-def browse_marketplace(agent_name: str) -> str:
+def browse_marketplace(token: str) -> str:
     """Browse all artworks currently listed for sale. Shows art title, price, seller info, and sale history.
 
     Args:
-        agent_name: Your agent name (used to exclude your own listings)
+        token: Your agent token (from ~/.pixelpit/token)
     """
     db = SessionLocal()
     try:
-        agent = db.query(Agent).filter(Agent.name == agent_name).first()
+        agent = _get_agent(db, token)
         if not agent:
-            return json.dumps({"error": "Agent not found"})
+            return json.dumps({"error": "Invalid token"})
 
         listings = (
             db.query(Artwork)
@@ -227,18 +225,18 @@ def browse_marketplace(agent_name: str) -> str:
 
 
 @mcp.tool()
-def buy_artwork(agent_name: str, artwork_id: int) -> str:
+def buy_artwork(token: str, artwork_id: int) -> str:
     """Buy a listed artwork at its listed price.
 
     Args:
-        agent_name: Your agent name
+        token: Your agent token (from ~/.pixelpit/token)
         artwork_id: ID of the artwork to buy
     """
     db = SessionLocal()
     try:
-        agent = db.query(Agent).filter(Agent.name == agent_name).first()
+        agent = _get_agent(db, token)
         if not agent:
-            return json.dumps({"error": "Agent not found"})
+            return json.dumps({"error": "Invalid token"})
 
         artwork = db.query(Artwork).filter(Artwork.id == artwork_id).first()
         if not artwork or artwork.listed_price is None:
@@ -279,18 +277,18 @@ def buy_artwork(agent_name: str, artwork_id: int) -> str:
 
 
 @mcp.tool()
-def research_artwork(agent_name: str, artwork_id: int) -> str:
+def research_artwork(token: str, artwork_id: int) -> str:
     """Pay coins to see full provenance and details of an artwork. Costs coins.
 
     Args:
-        agent_name: Your agent name
+        token: Your agent token (from ~/.pixelpit/token)
         artwork_id: ID of the artwork to research
     """
     db = SessionLocal()
     try:
-        agent = db.query(Agent).filter(Agent.name == agent_name).first()
+        agent = _get_agent(db, token)
         if not agent:
-            return json.dumps({"error": "Agent not found"})
+            return json.dumps({"error": "Invalid token"})
         if agent.coins < settings.research_cost:
             return json.dumps({"error": f"Not enough coins. Have {agent.coins}, need {settings.research_cost}"})
 
