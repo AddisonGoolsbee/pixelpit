@@ -1,17 +1,17 @@
 #!/bin/bash
-# PixelPit launcher — kills old processes, rebuilds frontend, starts everything, opens tunnels.
+# PixelPit launcher — kills old processes, rebuilds frontend, starts everything, opens ngrok tunnels.
 #
-# Usage: ./tunnel.sh
+# Usage: ./setup.sh
 #
 # What it does:
 #   1. Kills any existing processes on ports 8888/8889
 #   2. Rebuilds the frontend into dist/
 #   3. Starts FastAPI backend on :8888 (serves frontend + API)
 #   4. Starts MCP server on :8889 (streamable-http)
-#   5. Opens two localtunnel tunnels
+#   5. Opens ngrok tunnels (no interstitial page, works with Codex)
 #
 # Prerequisites:
-#   npm install -g localtunnel
+#   brew install ngrok && ngrok config add-authtoken <your-token>
 #   cd backend && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 #   cd frontend && npm install
 
@@ -27,13 +27,19 @@ VENV="$BACKEND_DIR/.venv/bin/activate"
 echo "Cleaning up old processes..."
 lsof -ti :8888 | xargs kill 2>/dev/null || true
 lsof -ti :8889 | xargs kill 2>/dev/null || true
-pkill -f "lt --port" 2>/dev/null || true
+pkill -f ngrok 2>/dev/null || true
 sleep 1
 
-# --- Check venv ---
+# --- Check prerequisites ---
 if [ ! -f "$VENV" ]; then
   echo "Python venv not found. Creating..."
   (cd "$BACKEND_DIR" && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt)
+fi
+
+if ! command -v ngrok &>/dev/null; then
+  echo "ngrok not found. Install with: brew install ngrok"
+  echo "Then: ngrok config add-authtoken <your-token>"
+  exit 1
 fi
 
 # --- Rebuild frontend ---
@@ -47,7 +53,8 @@ fi
 cleanup() {
   echo ""
   echo "Shutting down..."
-  kill $PID_BACKEND $PID_MCP $PID_TUNNEL_APP $PID_TUNNEL_MCP 2>/dev/null
+  kill $PID_BACKEND $PID_MCP 2>/dev/null
+  pkill -f ngrok 2>/dev/null || true
   wait 2>/dev/null
   echo "Done."
 }
@@ -65,27 +72,42 @@ PID_MCP=$!
 
 sleep 2
 
-# --- Start localtunnel ---
+# --- Start ngrok tunnels ---
 echo ""
-echo "Starting tunnels..."
-npx localtunnel --port 8888 --subdomain pixelpit --local-host 127.0.0.1 &
-PID_TUNNEL_APP=$!
-
-npx localtunnel --port 8889 --subdomain pixelpit-mcp --local-host 127.0.0.1 &
-PID_TUNNEL_MCP=$!
-
+echo "Starting ngrok tunnels..."
+ngrok http 8888 --log=stdout --log-level=warn > /dev/null &
+ngrok http 8889 --log=stdout --log-level=warn > /dev/null &
 sleep 3
+
+# --- Get tunnel URLs from ngrok API ---
+APP_URL=$(curl -s http://localhost:4040/api/tunnels | python3 -c "
+import sys, json
+tunnels = json.load(sys.stdin)['tunnels']
+for t in tunnels:
+    if ':8888' in t['config']['addr']:
+        print(t['public_url'])
+        break
+" 2>/dev/null || echo "unknown")
+
+MCP_URL=$(curl -s http://localhost:4040/api/tunnels | python3 -c "
+import sys, json
+tunnels = json.load(sys.stdin)['tunnels']
+for t in tunnels:
+    if ':8889' in t['config']['addr']:
+        print(t['public_url'])
+        break
+" 2>/dev/null || echo "unknown")
+
 echo ""
 echo "==========================================="
 echo "  PixelPit is running!"
 echo ""
-echo "  Frontend + API:  https://pixelpit.loca.lt"
-echo "  MCP endpoint:    https://pixelpit-mcp.loca.lt/mcp/"
+echo "  Frontend + API:  $APP_URL"
+echo "  MCP endpoint:    $MCP_URL/mcp/"
 echo ""
 echo "  Connect an agent:"
-echo "    claude mcp add pixelpit --transport http https://pixelpit-mcp.loca.lt/mcp/"
+echo "    claude mcp add pixelpit --transport http $MCP_URL/mcp/"
 echo ""
-echo "  (If subdomains were taken, check output above for actual URLs)"
 echo "==========================================="
 echo ""
 echo "Press Ctrl+C to stop everything."

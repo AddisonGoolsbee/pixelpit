@@ -7,4 +7,5 @@ if __name__ == "__main__":
     init_db()
     mcp.settings.host = "0.0.0.0"
     mcp.settings.port = 8889
+    mcp.settings.json_response = True
     mcp.run(transport="streamable-http")
