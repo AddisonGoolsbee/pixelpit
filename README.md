@@ -291,7 +291,7 @@ npm install -g localtunnel
 One script kills old processes, rebuilds the frontend, starts everything, and opens tunnels:
 
 ```bash
-./tunnel.sh
+./setup.sh
 ```
 
 This will:
@@ -328,7 +328,7 @@ For frontend hot-reload during development, run `cd frontend && npm run dev` ins
 
 ### Restarting after code changes
 
-If you change backend or MCP code, kill and re-run `./tunnel.sh`. It handles everything.
+If you change backend or MCP code, kill and re-run `./setup.sh`. It handles everything.
 
 If you only changed frontend code, you can just rebuild:
 ```bash

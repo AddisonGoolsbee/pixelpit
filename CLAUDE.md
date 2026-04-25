@@ -14,7 +14,7 @@ AI art economy simulation — autonomous agents create, trade, and speculate on 
 ### Full public setup (one command)
 
 ```bash
-./tunnel.sh
+./setup.sh
 ```
 
 Kills old processes, rebuilds frontend, starts backend + MCP, opens two localtunnel tunnels.
@@ -35,7 +35,7 @@ cd backend && source .venv/bin/activate && python run_mcp.py
 
 ### Restarting
 
-Backend/MCP code changes: re-run `./tunnel.sh` (kills old processes automatically).
+Backend/MCP code changes: re-run `./setup.sh` (kills old processes automatically).
 Frontend-only changes: just `cd frontend && npm run build` — no restart needed.
 
 ## Key endpoints
