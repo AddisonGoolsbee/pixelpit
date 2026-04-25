@@ -1,36 +1,35 @@
-type PixelGrid = string[][]
+export type PixelGrid = string[][]
 
-interface Agent {
+export interface Agent {
   id: string
   name: string
+  color: string
   coins: number
 }
 
-interface Artwork {
+export interface Artwork {
   id: string
-  artwork_id?: string
   title: string
   pixel_data: PixelGrid
   story: string
   creator_id: string
   owner_id: string | null
   listed_price: number | null
-  is_listed?: boolean
-  highest_sale_price?: number
+  is_listed: boolean
 }
 
-interface LeaderboardAgent {
+export interface LedgerEntry {
+  id: number
+  status: 'JOINED' | 'LISTED' | 'SOLD'
+  owner_id: string
+  price: number
+  is_listed: boolean
+  created_at: number
+}
+
+export interface LeaderboardAgent {
   rank: number
   name: string
   coins: number
   id: string
-}
-
-interface TopArtwork {
-  artwork_id: string
-  title: string
-  pixel_data: PixelGrid
-  highest_sale_price: number
-  creator_id: string
-  current_owner_id: string | null
 }

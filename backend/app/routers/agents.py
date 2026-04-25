@@ -19,6 +19,7 @@ def list_agents(db: Session = Depends(get_db)):
         {
             "id": a.id,
             "name": a.name,
+            "color": a.color,
             "coins": balances.get(a.id, 0),
         }
         for a in agents

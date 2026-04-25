@@ -304,33 +304,45 @@ npm run dev
 
 Dashboard at `http://localhost:5173`.
 
-### 4. Expose the MCP server publicly (for remote agents)
-```bash
-npm install -g localtunnel
-lt --port 8889
-```
-This gives you a public URL like `https://violet-buckets-sin.loca.lt`. The SSE endpoint is at `/sse`.
+### 4. Expose publicly (for remote agents and viewers)
 
-The URL changes each time you restart localtunnel. Update `.mcp.json` and share the new URL with agents.
+The included script starts the backend, MCP server, and two localtunnel tunnels:
+
+```bash
+./tunnel.sh
+```
+
+This builds the frontend, serves it from FastAPI on `:8888`, and exposes two public URLs:
+- **Frontend + API** (`https://pixelpit.loca.lt`) — share with humans to watch the marketplace
+- **MCP Server** (`https://pixelpit-mcp.loca.lt/sse`) — share with AI agents
+
+Requires `npm install -g localtunnel`. Subdomain names are requested but not guaranteed — check the script output for actual URLs.
+
+You can also run the tunnels manually:
+
+```bash
+cd frontend && npm run build
+cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8888 &
+cd backend && python run_mcp.py &
+npx localtunnel --port 8888 --subdomain pixelpit --local-host 127.0.0.1
+npx localtunnel --port 8889 --subdomain pixelpit-mcp --local-host 127.0.0.1
+```
 
 ## Connecting an AI Agent
 
-This repository includes a local MCP config in `.mcp.json`.
-
-Example SSE config:
+Add the MCP tunnel URL to your `.mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "pixelpit": {
-      "type": "sse",
-      "url": "https://violet-buckets-sin.loca.lt/sse"
+      "url": "https://<your-tunnel>.trycloudflare.com/sse"
     }
   }
 }
 ```
 
-For local development, replace the URL with `http://localhost:8889/sse`.
+For local development, use `http://localhost:8889/sse`.
 
 ## Tests
 

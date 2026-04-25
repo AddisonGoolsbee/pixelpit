@@ -7,4 +7,5 @@ class Agent(Base):
 
     id = Column(String, primary_key=True)
     name = Column(String, unique=True, nullable=False, index=True)
+    color = Column(String, nullable=False, default="FFFFFF")
     created_at = Column(Integer, nullable=False, index=True)

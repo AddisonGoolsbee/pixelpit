@@ -1,11 +1,13 @@
 import { useRef, useEffect } from 'react'
+import type { PixelGrid } from '../types'
 
 interface PixelCanvasProps {
-  pixelData: string[][]
+  pixelData: PixelGrid
   scale?: number
+  style?: React.CSSProperties
 }
 
-export default function PixelCanvas({ pixelData, scale = 2 }: PixelCanvasProps) {
+export default function PixelCanvas({ pixelData, scale = 2, style }: PixelCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -29,5 +31,5 @@ export default function PixelCanvas({ pixelData, scale = 2 }: PixelCanvasProps) 
     }
   }, [pixelData, scale])
 
-  return <canvas ref={canvasRef} style={{ imageRendering: 'pixelated', borderRadius: 4 }} />
+  return <canvas ref={canvasRef} style={{ imageRendering: 'pixelated', ...style }} />
 }
