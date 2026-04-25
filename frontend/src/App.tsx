@@ -124,7 +124,7 @@ export default function App() {
 
       {/* Agent avatar layer — independent overlay above easels, scrolls with page */}
       <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 20 }}>
-        {agents.map(agent => {
+        {agents.map((agent, index) => {
           const ownedArt = artworks.find(a => a.owner_id === agent.id)
           const easelEl = ownedArt ? easelRefs.current[ownedArt.id] : null
           if (!easelEl || !gridRef.current) return null
@@ -134,6 +134,7 @@ export default function App() {
             <AgentAvatar
               key={agent.id}
               agent={agent}
+              index={index}
               x={easelRect.left - containerRect.left + easelRect.width * 0.65}
               y={easelRect.bottom - containerRect.top - 60}
             />
