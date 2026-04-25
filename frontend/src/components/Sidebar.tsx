@@ -16,8 +16,7 @@ export default function Sidebar({ agents, ledger }: SidebarProps) {
       <div
         onClick={() => setOpen(!open)}
         style={{
-          position: 'fixed', right: open ? 320 : 0, top: '50%',
-          transform: 'translateY(-50%)',
+          position: 'fixed', right: open ? 320 : 0, top: 16,
           background: '#1a1a1aee', border: '1px solid #333',
           borderRight: open ? 'none' : '1px solid #333',
           borderRadius: open ? '6px 0 0 6px' : '6px 0 0 6px',
@@ -64,7 +63,7 @@ export default function Sidebar({ agents, ledger }: SidebarProps) {
                   <span style={{ color: '#aaa' }}>{entry.price} kr</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: `#${agent?.color || '888'}` }}>
+                  <span style={{ color: agent?.color || '#888' }}>
                     {agent?.name || entry.owner_id.slice(0, 8)}
                   </span>
                   <span style={{ color: '#555', fontSize: 10 }}>
@@ -84,7 +83,7 @@ export default function Sidebar({ agents, ledger }: SidebarProps) {
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '3px 0', fontSize: 11,
             }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: `#${a.color}` }} />
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: a.color }} />
               <span style={{ flex: 1, color: '#ccc' }}>{a.name}</span>
               <span style={{ color: '#888' }}>{a.coins} kr</span>
             </div>
