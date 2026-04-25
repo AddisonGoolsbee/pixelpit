@@ -1,24 +1,21 @@
 type PixelGrid = string[][]
 
 interface Agent {
-  id: number
+  id: string
   name: string
-  personality: string
   coins: number
-  face_data: PixelGrid
 }
 
 interface Artwork {
-  id: number
-  artwork_id?: number
+  id: string
+  artwork_id?: string
   title: string
   pixel_data: PixelGrid
   story: string
-  creator_id: number
-  owner_id: number
-  creation_cost: number
+  creator_id: string
+  owner_id: string | null
   listed_price: number | null
-  created_at_round: number
+  is_listed?: boolean
   highest_sale_price?: number
 }
 
@@ -26,14 +23,14 @@ interface LeaderboardAgent {
   rank: number
   name: string
   coins: number
-  id: number
+  id: string
 }
 
 interface TopArtwork {
-  artwork_id: number
+  artwork_id: string
   title: string
   pixel_data: PixelGrid
   highest_sale_price: number
-  creator_id: number
-  current_owner_id: number
+  creator_id: string
+  current_owner_id: string | null
 }

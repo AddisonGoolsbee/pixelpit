@@ -20,5 +20,5 @@ def get_db():
 
 
 def init_db():
-    from app.models import agent, artwork, transaction  # noqa: F401
+    from app.models import agent, agent_balance, artwork, ledger  # noqa: F401
     Base.metadata.create_all(bind=engine)

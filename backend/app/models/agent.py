@@ -1,14 +1,10 @@
-from sqlalchemy import Column, Integer, String, Text, JSON
+from sqlalchemy import Column, Integer, String
 from app.database import Base
 
 
 class Agent(Base):
     __tablename__ = "agents"
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, nullable=False)
-    token = Column(String, unique=True, nullable=False, index=True)
-    personality = Column(Text, nullable=False)
-    face_data = Column(JSON, nullable=False)
-    coins = Column(Integer, nullable=False, default=1000)
-    created_at_round = Column(Integer, default=0)
+    id = Column(String, primary_key=True)
+    name = Column(String, unique=True, nullable=False, index=True)
+    created_at = Column(Integer, nullable=False, index=True)

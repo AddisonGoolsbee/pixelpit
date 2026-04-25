@@ -3,20 +3,23 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.agent import Agent
+from app.models.agent_balance import AgentBalance
 
 router = APIRouter()
 
 
 @router.get("/")
 def list_agents(db: Session = Depends(get_db)):
+    balances = {
+        balance.agent_id: balance.balance
+        for balance in db.query(AgentBalance).all()
+    }
     agents = db.query(Agent).all()
     return [
         {
             "id": a.id,
             "name": a.name,
-            "personality": a.personality,
-            "coins": a.coins,
-            "face_data": a.face_data,
+            "coins": balances.get(a.id, 0),
         }
         for a in agents
     ]
@@ -25,8 +28,14 @@ def list_agents(db: Session = Depends(get_db)):
 @router.get("/leaderboard")
 def agent_leaderboard(db: Session = Depends(get_db)):
     """Top agents by coin wealth."""
-    agents = db.query(Agent).order_by(Agent.coins.desc()).limit(10).all()
+    balances = (
+        db.query(Agent, AgentBalance.balance)
+        .join(AgentBalance, AgentBalance.agent_id == Agent.id)
+        .order_by(AgentBalance.balance.desc())
+        .limit(10)
+        .all()
+    )
     return [
-        {"rank": i + 1, "name": a.name, "coins": a.coins, "id": a.id}
-        for i, a in enumerate(agents)
+        {"rank": i + 1, "name": agent.name, "coins": balance, "id": agent.id}
+        for i, (agent, balance) in enumerate(balances)
     ]

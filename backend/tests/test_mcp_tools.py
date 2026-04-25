@@ -1,302 +1,193 @@
-"""Unit tests for PixelPit MCP server tools."""
+"""Unit tests for the target PixelPit MCP tool surface."""
 
 import json
 import os
 import sys
+
 import pytest
 
-# Add backend to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from app.database import Base, engine, SessionLocal, init_db
-from app.models.agent import Agent
-from app.models.artwork import Artwork
-from app.models.transaction import Transaction
+from app.database import Base, SessionLocal, engine, init_db
 from app.mcp_server import (
-    register_agent,
-    get_my_status,
-    create_artwork,
-    list_artwork,
-    browse_marketplace,
+    browse_art_board,
     buy_artwork,
-    research_artwork,
-    get_leaderboard,
+    create_art,
+    get_my_portfolio,
+    inspect_artwork,
+    list_artwork,
+    register,
 )
+from app.models.agent_balance import AgentBalance
+from app.models.ledger import LedgerEntry
 
 
 @pytest.fixture(autouse=True)
 def fresh_db():
-    """Wipe and recreate the database for each test."""
     Base.metadata.drop_all(bind=engine)
     init_db()
     yield
     Base.metadata.drop_all(bind=engine)
 
 
-DUMMY_FACE = json.dumps([["FF0000"] * 32] * 32)
 DUMMY_ART = json.dumps([["00FF00"] * 100] * 100)
 
 
-# --- Registration ---
+def _register(name: str) -> dict:
+    return json.loads(register(name))
+
 
 def test_register_new_agent():
-    result = json.loads(register_agent("Alice", "loves art", DUMMY_FACE))
-    assert "token" in result
+    result = _register("Alice")
+    assert "credential" in result
     assert result["name"] == "Alice"
-    assert result["coins"] == 1000
+    assert result["kroons"] == 1000
 
 
 def test_register_duplicate_name_returns_existing():
-    r1 = json.loads(register_agent("Alice", "loves art", DUMMY_FACE))
-    r2 = json.loads(register_agent("Alice", "different personality", DUMMY_FACE))
-    assert r2["status"] == "already_registered"
-    assert r2["token"] == r1["token"]
+    first = _register("Alice")
+    second = _register("Alice")
+    assert second["status"] == "already_registered"
+    assert second["credential"] == first["credential"]
 
 
-def test_register_returns_valid_uuid():
-    result = json.loads(register_agent("Bob", "flipper", DUMMY_FACE))
-    token = result["token"]
-    # UUID4 format: 8-4-4-4-12 hex chars
-    parts = token.split("-")
-    assert len(parts) == 5
-    assert [len(p) for p in parts] == [8, 4, 4, 4, 12]
+def test_register_creates_joined_ledger_and_balance_cache():
+    reg = _register("Alice")
+    db = SessionLocal()
+    joined = db.query(LedgerEntry).filter(LedgerEntry.owner_id == reg["agent_id"]).all()
+    balance = db.query(AgentBalance).filter(AgentBalance.agent_id == reg["agent_id"]).first()
+    db.close()
+
+    assert len(joined) == 1
+    assert joined[0].status == "JOINED"
+    assert balance.balance == 1000
 
 
-# --- Status ---
+def test_create_art_auto_lists_and_costs_100():
+    reg = _register("Alice")
+    result = json.loads(create_art(reg["credential"], 250, "Sunset", "A beautiful sunset", DUMMY_ART))
+    assert "artwork_id" in result
+    assert "listing_id" in result
+    assert result["current_price"] == 250
+    assert result["price_history"] == []
 
-def test_get_status_valid_token():
-    reg = json.loads(register_agent("Alice", "loves art", DUMMY_FACE))
-    status = json.loads(get_my_status(reg["token"]))
-    assert status["name"] == "Alice"
-    assert status["coins"] == 1000
-    assert status["inventory"] == []
+    portfolio = json.loads(get_my_portfolio(reg["credential"]))
+    assert portfolio["kroons"] == 900
+    assert portfolio["owned_artworks"][0]["is_listed"] is True
 
 
-def test_get_status_invalid_token():
-    result = json.loads(get_my_status("bad-token"))
+def test_create_art_invalid_credential():
+    result = json.loads(create_art("bad-token", 200, "Sunset", "A sunset", DUMMY_ART))
     assert "error" in result
 
 
-# --- Create Artwork ---
-
-def test_create_artwork_success():
-    reg = json.loads(register_agent("Alice", "loves art", DUMMY_FACE))
-    result = json.loads(create_artwork(reg["token"], "Sunset", "A beautiful sunset", DUMMY_ART))
-    assert "artwork_id" in result
-    assert result["title"] == "Sunset"
-    assert result["coins_remaining"] == 950  # 1000 - 50
-
-
-def test_create_artwork_insufficient_coins():
-    reg = json.loads(register_agent("Alice", "loves art", DUMMY_FACE))
-    # Drain coins
+def test_create_art_insufficient_kroons():
+    reg = _register("Alice")
     db = SessionLocal()
-    agent = db.query(Agent).filter(Agent.token == reg["token"]).first()
-    agent.coins = 10
+    balance = db.query(AgentBalance).filter(AgentBalance.agent_id == reg["credential"]).first()
+    balance.balance = 50
     db.commit()
     db.close()
 
-    result = json.loads(create_artwork(reg["token"], "Sunset", "A sunset", DUMMY_ART))
+    result = json.loads(create_art(reg["credential"], 200, "Sunset", "A sunset", DUMMY_ART))
     assert "error" in result
 
 
-def test_create_artwork_invalid_token():
-    result = json.loads(create_artwork("bad-token", "Sunset", "A sunset", DUMMY_ART))
-    assert "error" in result
+def test_list_artwork_requires_owned_unlisted_artwork():
+    seller = _register("Alice")
+    art = json.loads(create_art(seller["credential"], 200, "Sunset", "A sunset", DUMMY_ART))
+
+    already_listed = json.loads(list_artwork(seller["credential"], art["artwork_id"], 300))
+    assert "error" in already_listed
+
+    buyer = _register("Bob")
+    buy_artwork(buyer["credential"], art["artwork_id"])
+
+    relist = json.loads(list_artwork(buyer["credential"], art["artwork_id"], 500))
+    assert relist["artwork_id"] == art["artwork_id"]
+    assert relist["price"] == 500
+    assert "listing_id" in relist
 
 
-# --- List Artwork ---
+def test_browse_art_board_supports_lightweight_listing_view():
+    seller = _register("Alice")
+    viewer = _register("Bob")
+    json.loads(create_art(seller["credential"], 200, "Sunset", "A sunset", DUMMY_ART))
 
-def test_list_artwork_success():
-    reg = json.loads(register_agent("Alice", "loves art", DUMMY_FACE))
-    art = json.loads(create_artwork(reg["token"], "Sunset", "A sunset", DUMMY_ART))
-    result = json.loads(list_artwork(reg["token"], art["artwork_id"], 200))
-    assert result["listed"] is True
-    assert result["price"] == 200
-
-
-def test_list_artwork_not_owned():
-    r1 = json.loads(register_agent("Alice", "loves art", DUMMY_FACE))
-    r2 = json.loads(register_agent("Bob", "flipper", DUMMY_FACE))
-    art = json.loads(create_artwork(r1["token"], "Sunset", "A sunset", DUMMY_ART))
-    result = json.loads(list_artwork(r2["token"], art["artwork_id"], 200))
-    assert "error" in result
-
-
-def test_list_artwork_fee_deducted():
-    reg = json.loads(register_agent("Alice", "loves art", DUMMY_FACE))
-    art = json.loads(create_artwork(reg["token"], "Sunset", "A sunset", DUMMY_ART))
-    result = json.loads(list_artwork(reg["token"], art["artwork_id"], 200))
-    # 1000 - 50 (create) - 10 (listing fee) = 940
-    assert result["coins_remaining"] == 940
-
-
-# --- Browse Marketplace ---
-
-def test_browse_empty_marketplace():
-    reg = json.loads(register_agent("Alice", "loves art", DUMMY_FACE))
-    result = json.loads(browse_marketplace(reg["token"]))
-    assert result["count"] == 0
-
-
-def test_browse_excludes_own_listings():
-    reg = json.loads(register_agent("Alice", "loves art", DUMMY_FACE))
-    art = json.loads(create_artwork(reg["token"], "Sunset", "A sunset", DUMMY_ART))
-    list_artwork(reg["token"], art["artwork_id"], 200)
-    result = json.loads(browse_marketplace(reg["token"]))
-    assert result["count"] == 0  # own listing excluded
-
-
-def test_browse_shows_others_listings():
-    r1 = json.loads(register_agent("Alice", "loves art", DUMMY_FACE))
-    r2 = json.loads(register_agent("Bob", "flipper", DUMMY_FACE))
-    art = json.loads(create_artwork(r1["token"], "Sunset", "A sunset", DUMMY_ART))
-    list_artwork(r1["token"], art["artwork_id"], 200)
-    result = json.loads(browse_marketplace(r2["token"]))
+    result = json.loads(browse_art_board(viewer["credential"]))
     assert result["count"] == 1
-    assert result["listings"][0]["title"] == "Sunset"
+    listing = result["listings"][0]
+    assert set(listing.keys()) == {"listing_id", "artwork_id", "title", "price", "seller_id"}
 
 
-# --- Buy Artwork ---
+def test_browse_art_board_filters_by_price_and_limit():
+    seller = _register("Alice")
+    viewer = _register("Bob")
+    json.loads(create_art(seller["credential"], 150, "One", "Desc", DUMMY_ART))
+    second = json.loads(create_art(seller["credential"], 350, "Two", "Desc", DUMMY_ART))
+    buy_artwork(viewer["credential"], second["artwork_id"])
 
-def test_buy_artwork_success():
-    r1 = json.loads(register_agent("Alice", "loves art", DUMMY_FACE))
-    r2 = json.loads(register_agent("Bob", "flipper", DUMMY_FACE))
-    art = json.loads(create_artwork(r1["token"], "Sunset", "A sunset", DUMMY_ART))
-    list_artwork(r1["token"], art["artwork_id"], 200)
+    result = json.loads(browse_art_board(viewer["credential"], min_price=100, max_price=200, limit=1))
+    assert result["count"] == 1
+    assert result["listings"][0]["price"] == 150
 
-    result = json.loads(buy_artwork(r2["token"], art["artwork_id"]))
+
+def test_inspect_artwork_returns_history_without_cost():
+    seller = _register("Alice")
+    buyer = _register("Bob")
+    art = json.loads(create_art(seller["credential"], 200, "Sunset", "A sunset", DUMMY_ART))
+    buy_artwork(buyer["credential"], art["artwork_id"])
+
+    result = json.loads(inspect_artwork(buyer["credential"], art["artwork_id"]))
+    assert result["full_description"] == "A sunset"
+    assert result["price_history"] == [200]
+    assert [entry["status"] for entry in result["ledger_history"]] == ["LISTED", "SOLD"]
+
+    portfolio = json.loads(get_my_portfolio(buyer["credential"]))
+    assert portfolio["kroons"] == 800
+
+
+def test_buy_artwork_transfers_funds_and_delists():
+    seller = _register("Alice")
+    buyer = _register("Bob")
+    art = json.loads(create_art(seller["credential"], 200, "Sunset", "A sunset", DUMMY_ART))
+
+    result = json.loads(buy_artwork(buyer["credential"], art["artwork_id"]))
     assert result["bought"] is True
     assert result["price"] == 200
-    assert result["coins_remaining"] == 800  # 1000 - 200
+
+    seller_portfolio = json.loads(get_my_portfolio(seller["credential"]))
+    buyer_portfolio = json.loads(get_my_portfolio(buyer["credential"]))
+    assert seller_portfolio["kroons"] == 1100
+    assert buyer_portfolio["kroons"] == 800
+
+    browse = json.loads(browse_art_board(seller["credential"]))
+    assert browse["count"] == 0
 
 
-def test_buy_artwork_transfers_coins():
-    r1 = json.loads(register_agent("Alice", "loves art", DUMMY_FACE))
-    r2 = json.loads(register_agent("Bob", "flipper", DUMMY_FACE))
-    art = json.loads(create_artwork(r1["token"], "Sunset", "A sunset", DUMMY_ART))
-    list_artwork(r1["token"], art["artwork_id"], 200)
-    buy_artwork(r2["token"], art["artwork_id"])
+def test_get_my_portfolio_returns_owned_artworks():
+    agent = _register("Alice")
+    art = json.loads(create_art(agent["credential"], 200, "Sunset", "A sunset", DUMMY_ART))
 
-    alice = json.loads(get_my_status(r1["token"]))
-    # 1000 - 50 (create) - 10 (list) + 200 (sale) = 1140
-    assert alice["coins"] == 1140
-
-
-def test_buy_own_artwork_fails():
-    reg = json.loads(register_agent("Alice", "loves art", DUMMY_FACE))
-    art = json.loads(create_artwork(reg["token"], "Sunset", "A sunset", DUMMY_ART))
-    list_artwork(reg["token"], art["artwork_id"], 200)
-    result = json.loads(buy_artwork(reg["token"], art["artwork_id"]))
-    assert "error" in result
+    portfolio = json.loads(get_my_portfolio(agent["credential"]))
+    assert portfolio["agent_id"] == agent["agent_id"]
+    assert portfolio["kroons"] == 900
+    assert portfolio["owned_artworks"][0]["artwork_id"] == art["artwork_id"]
+    assert portfolio["owned_artworks"][0]["listed_price"] == 200
 
 
-def test_buy_insufficient_coins():
-    r1 = json.loads(register_agent("Alice", "loves art", DUMMY_FACE))
-    r2 = json.loads(register_agent("Bob", "flipper", DUMMY_FACE))
-    art = json.loads(create_artwork(r1["token"], "Sunset", "A sunset", DUMMY_ART))
-    list_artwork(r1["token"], art["artwork_id"], 5000)
-    result = json.loads(buy_artwork(r2["token"], art["artwork_id"]))
-    assert "error" in result
+def test_ledger_records_joined_listed_and_sold_entries():
+    seller = _register("Alice")
+    buyer = _register("Bob")
+    art = json.loads(create_art(seller["credential"], 200, "Sunset", "A sunset", DUMMY_ART))
+    buy_artwork(buyer["credential"], art["artwork_id"])
 
+    db = SessionLocal()
+    ledger_entries = db.query(LedgerEntry).order_by(LedgerEntry.id.asc()).all()
+    db.close()
 
-def test_buy_unlisted_artwork_fails():
-    r1 = json.loads(register_agent("Alice", "loves art", DUMMY_FACE))
-    r2 = json.loads(register_agent("Bob", "flipper", DUMMY_FACE))
-    art = json.loads(create_artwork(r1["token"], "Sunset", "A sunset", DUMMY_ART))
-    result = json.loads(buy_artwork(r2["token"], art["artwork_id"]))
-    assert "error" in result
-
-
-def test_buy_delists_artwork():
-    r1 = json.loads(register_agent("Alice", "loves art", DUMMY_FACE))
-    r2 = json.loads(register_agent("Bob", "flipper", DUMMY_FACE))
-    art = json.loads(create_artwork(r1["token"], "Sunset", "A sunset", DUMMY_ART))
-    list_artwork(r1["token"], art["artwork_id"], 200)
-    buy_artwork(r2["token"], art["artwork_id"])
-
-    # Should no longer appear in marketplace
-    result = json.loads(browse_marketplace(r1["token"]))
-    assert result["count"] == 0
-
-
-# --- Research Artwork ---
-
-def test_research_artwork_success():
-    r1 = json.loads(register_agent("Alice", "loves art", DUMMY_FACE))
-    art = json.loads(create_artwork(r1["token"], "Sunset", "A sunset", DUMMY_ART))
-    result = json.loads(research_artwork(r1["token"], art["artwork_id"]))
-    assert result["title"] == "Sunset"
-    assert result["creator"] == "Alice"
-    assert result["coins_remaining"] == 930  # 1000 - 50 - 20
-
-
-def test_research_shows_provenance():
-    r1 = json.loads(register_agent("Alice", "loves art", DUMMY_FACE))
-    r2 = json.loads(register_agent("Bob", "flipper", DUMMY_FACE))
-    art = json.loads(create_artwork(r1["token"], "Sunset", "A sunset", DUMMY_ART))
-    list_artwork(r1["token"], art["artwork_id"], 200)
-    buy_artwork(r2["token"], art["artwork_id"])
-
-    result = json.loads(research_artwork(r2["token"], art["artwork_id"]))
-    assert len(result["full_provenance"]) == 1
-    assert result["full_provenance"][0]["price"] == 200
-
-
-# --- Leaderboard ---
-
-def test_leaderboard_empty():
-    result = json.loads(get_leaderboard())
-    assert result["richest_agents"] == []
-    assert result["most_expensive_art"] == []
-
-
-def test_leaderboard_ranks_by_coins():
-    r1 = json.loads(register_agent("Alice", "loves art", DUMMY_FACE))
-    r2 = json.loads(register_agent("Bob", "flipper", DUMMY_FACE))
-    # Alice spends coins creating art, Bob doesn't
-    create_artwork(r1["token"], "Sunset", "A sunset", DUMMY_ART)
-
-    result = json.loads(get_leaderboard())
-    assert result["richest_agents"][0]["name"] == "Bob"
-    assert result["richest_agents"][1]["name"] == "Alice"
-
-
-def test_leaderboard_tracks_sales():
-    r1 = json.loads(register_agent("Alice", "loves art", DUMMY_FACE))
-    r2 = json.loads(register_agent("Bob", "flipper", DUMMY_FACE))
-    art = json.loads(create_artwork(r1["token"], "Sunset", "A sunset", DUMMY_ART))
-    list_artwork(r1["token"], art["artwork_id"], 300)
-    buy_artwork(r2["token"], art["artwork_id"])
-
-    result = json.loads(get_leaderboard())
-    assert len(result["most_expensive_art"]) == 1
-    assert result["most_expensive_art"][0]["highest_sale"] == 300
-
-
-# --- Resale Flow ---
-
-def test_resale_full_flow():
-    """Test create -> list -> buy -> relist -> resell."""
-    r1 = json.loads(register_agent("Alice", "creator", DUMMY_FACE))
-    r2 = json.loads(register_agent("Bob", "flipper", DUMMY_FACE))
-    r3 = json.loads(register_agent("Carol", "collector", DUMMY_FACE))
-
-    # Alice creates and lists
-    art = json.loads(create_artwork(r1["token"], "Masterpiece", "A masterpiece", DUMMY_ART))
-    list_artwork(r1["token"], art["artwork_id"], 100)
-
-    # Bob buys and relists higher
-    buy_artwork(r2["token"], art["artwork_id"])
-    list_artwork(r2["token"], art["artwork_id"], 500)
-
-    # Carol buys the resale
-    result = json.loads(buy_artwork(r3["token"], art["artwork_id"]))
-    assert result["bought"] is True
-    assert result["price"] == 500
-
-    # Check provenance has 2 sales
-    research = json.loads(research_artwork(r3["token"], art["artwork_id"]))
-    assert len(research["full_provenance"]) == 2
-    assert research["full_provenance"][0]["price"] == 100
-    assert research["full_provenance"][1]["price"] == 500
+    assert len(ledger_entries) == 4
+    assert ledger_entries[0].status == "JOINED"
+    assert ledger_entries[1].status == "JOINED"
+    assert ledger_entries[2].status == "LISTED"
+    assert ledger_entries[3].status == "SOLD"
